@@ -14,7 +14,7 @@ const AES_BLOCKLEN: usize = 16;
 // AES128
 const Nk: usize = 4;        // The number of 32 bit words in a key.
 const Nr: usize = 10;       // The number of rounds in AES Cipher.
-const AES_KEYLEN: usize = 16;
+pub const AES_KEYLEN: usize = 16;
 const AES_keyExpSize: usize = 176;
 
 /*****************************************************************************/
