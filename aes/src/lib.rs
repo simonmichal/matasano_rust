@@ -67,14 +67,14 @@ const Rcon: [u8; 11] = [
   0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36 ];
 
 /*
- * Jordan Goulder points out in PR #12 (https://github.com/kokke/tiny-AES-C/pull/12),
- * that you can remove most of the elements in the Rcon array, because they are unused.
- *
- * From Wikipedia's article on the Rijndael key schedule @ https://en.wikipedia.org/wiki/Rijndael_key_schedule#Rcon
- * 
- * "Only the first some of these constants are actually used – up to rcon[10] for AES-128 (as 11 round keys are needed), 
- *  up to rcon[8] for AES-192, up to rcon[7] for AES-256. rcon[0] is not used in AES algorithm."
- */
+* Jordan Goulder points out in PR #12 (https://github.com/kokke/tiny-AES-C/pull/12),
+* that you can remove most of the elements in the Rcon array, because they are unused.
+*
+* From Wikipedia's article on the Rijndael key schedule @ https://en.wikipedia.org/wiki/Rijndael_key_schedule#Rcon
+* 
+* "Only the first some of these constants are actually used – up to rcon[10] for AES-128 (as 11 round keys are needed), 
+*  up to rcon[8] for AES-192, up to rcon[7] for AES-256. rcon[0] is not used in AES algorithm."
+*/
 
 
 /*****************************************************************************/
@@ -238,10 +238,10 @@ pub fn MixColumns( block: &mut [u8] ) {
 //       See https://github.com/kokke/tiny-AES-c/pull/34
 fn Multiply( x: u8, y: u8 ) -> u8 {
   return ((y & 1) * x) ^
-       ((y>>1 & 1) * xtime(x)) ^
-       ((y>>2 & 1) * xtime(xtime(x))) ^
-       ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^
-       ((y>>4 & 1) * xtime(xtime(xtime(xtime(x))))); /* this last call to xtime() can be omitted */
+      ((y>>1 & 1) * xtime(x)) ^
+      ((y>>2 & 1) * xtime(xtime(x))) ^
+      ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^
+      ((y>>4 & 1) * xtime(xtime(xtime(xtime(x))))); /* this last call to xtime() can be omitted */
 }
 
 fn getSBoxInvert( num: usize ) -> u8 {
@@ -440,13 +440,13 @@ pub fn AES_ECB_decrypt( ctx: &AES_ctx, buf: &mut [u8] ) {
 #[cfg(test)]
 mod test {
 
-  use crate::set1::aes::AES_ctx;
-  use crate::set1::aes::AES_keyExpSize;
-  use crate::set1::aes::AddRoundKey;
-  use crate::set1::aes::SubBytes;
-  use crate::set1::aes::ShiftRows;
-  use crate::set1::aes::MixColumns;
-  use crate::set1::aes::Cipher;
+  use crate::AES_ctx;
+  use crate::AES_keyExpSize;
+  use crate::AddRoundKey;
+  use crate::SubBytes;
+  use crate::ShiftRows;
+  use crate::MixColumns;
+  use crate::Cipher;
 
   #[test]
   fn RoundKeyTest() {

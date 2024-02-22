@@ -1,6 +1,6 @@
 mod set1;
+mod set2;
 
-use crate::set1::aes::SubBytes;
 use crate::set1::repeating_xor;
 use crate::set1::hamming_distance;
 use crate::set1::break_repeating_xor_key;
@@ -12,11 +12,6 @@ use std::fs;
 use std::env;
 use std::collections::HashSet;
 use std::str;
-use crate::set1::aes::AES_ECB_decrypt;
-use crate::set1::aes::AES_ECB_encrypt;
-use crate::set1::aes::AES_ctx;
-use crate::set1::aes::MixColumns;
-
 
 fn print_array( array: &[u8] ) {
   for b in array {
@@ -28,18 +23,8 @@ fn print_array( array: &[u8] ) {
 fn main() {
 
   println!( "There we go again ...");
-  if let Ok( txt ) = fs::read_to_string( "7.txt" ) {
-    let mut chars: HashSet<u8> = HashSet::from_iter( BASE64CHARS.to_vec() );
-    chars.insert( b'=' );
-    let txt = txt.as_bytes().into_iter().filter( |c| chars.contains(c) ).map(|c|*c).collect::<Vec<u8>>();
-    let mut bytes = from_base64( &txt );
-
-    let key = "YELLOW SUBMARINE".as_bytes();
-    let aes_ctx = AES_ctx::New( &key );
-
-    AES_ECB_decrypt( &aes_ctx, &mut bytes );
-
-    let plain = str::from_utf8( &bytes ).unwrap();
-    println!( "{plain}")
-  }
+  // if let Ok( txt ) = fs::read_to_string( "8.txt" ) {
+  //   let aes_ecb = txt.split( "\n" ).filter( |l|contains_duplicate(*l) ).collect::<Vec<_>>();
+  //   println!( "{}", aes_ecb[0] );
+  // }
 }
