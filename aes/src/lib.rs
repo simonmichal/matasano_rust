@@ -356,46 +356,35 @@ pub fn AES_ECB_decrypt( ctx: &AES_ctx, buf: &mut [u8] ) {
   }
 }
 
+fn XorWithIv( buf: &mut [u8], Iv: &[u8] ) {
+  for i in 0 .. AES_BLOCKLEN { // The block in AES is always 128bit no matter the key size
+    buf[i] ^= Iv[i];
+  }
+}
 
+pub fn AES_CBC_encrypt_buffer( ctx: &mut AES_ctx, buf: &mut [u8]) {
+  let mut aux = ctx.Iv.clone();
+  let mut Iv: &mut[u8] = &mut aux;
+  let mut buf = buf;
+  for _ in ( 0 .. buf.len() ).step_by( AES_BLOCKLEN ) {
+    XorWithIv( buf, Iv );
+    Cipher( buf, &ctx.RoundKey );
+    ( Iv, buf ) = buf.split_at_mut(AES_BLOCKLEN);
+  }  
+  ctx.Iv.copy_from_slice( &Iv[0..AES_BLOCKLEN] );
+}
 
-// static void XorWithIv(uint8_t* buf, const uint8_t* Iv)
-// {
-//   uint8_t i;
-//   for (i = 0; i < AES_BLOCKLEN; ++i) // The block in AES is always 128bit no matter the key size
-//   {
-//     buf[i] ^= Iv[i];
-//   }
-// }
-
-// void AES_CBC_encrypt_buffer(struct AES_ctx *ctx, uint8_t* buf, size_t length)
-// {
-//   size_t i;
-//   uint8_t *Iv = ctx->Iv;
-//   for (i = 0; i < length; i += AES_BLOCKLEN)
-//   {
-//     XorWithIv(buf, Iv);
-//     Cipher((state_t*)buf, ctx->RoundKey);
-//     Iv = buf;
-//     buf += AES_BLOCKLEN;
-//   }
-//   /* store Iv in ctx for next call */
-//   memcpy(ctx->Iv, Iv, AES_BLOCKLEN);
-// }
-
-// void AES_CBC_decrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, size_t length)
-// {
-//   size_t i;
-//   uint8_t storeNextIv[AES_BLOCKLEN];
-//   for (i = 0; i < length; i += AES_BLOCKLEN)
-//   {
-//     memcpy(storeNextIv, buf, AES_BLOCKLEN);
-//     InvCipher((state_t*)buf, ctx->RoundKey);
-//     XorWithIv(buf, ctx->Iv);
-//     memcpy(ctx->Iv, storeNextIv, AES_BLOCKLEN);
-//     buf += AES_BLOCKLEN;
-//   }
-
-// }
+pub fn AES_CBC_decrypt_buffer( ctx: &mut AES_ctx, buf: &mut [u8] ) {
+  let mut storeNextIv = vec![0u8; AES_BLOCKLEN];
+  let mut buf = buf;
+  for _ in ( 0 .. buf.len() ).step_by( AES_BLOCKLEN ) {
+    storeNextIv.copy_from_slice( &buf[0..AES_BLOCKLEN] );
+    InvCipher( buf, &ctx.RoundKey );
+    XorWithIv( buf, &ctx.Iv );
+    ctx.Iv.copy_from_slice( &storeNextIv );
+    buf = &mut buf[AES_BLOCKLEN..];
+  }
+}
 
 // #endif // #if defined(CBC) && (CBC == 1)
 
@@ -447,6 +436,8 @@ mod test {
   use crate::ShiftRows;
   use crate::MixColumns;
   use crate::Cipher;
+  use crate::AES_CBC_encrypt_buffer;
+  use crate::AES_CBC_decrypt_buffer;
 
   #[test]
   fn RoundKeyTest() {
@@ -514,5 +505,24 @@ mod test {
     let expected: Vec<u8> = vec![32, 30, 128, 47, 123, 106, 206, 111, 108, 208, 167, 67, 186, 120, 174, 173];
     Cipher( &mut block, &aes_ctx.RoundKey );
     assert_eq!( block, expected );
+  }
+
+  #[test]
+  fn AES_CBC_Test() {
+    let key = "YELLOW SUBMARINE".as_bytes();
+    let mut aes_ctx = AES_ctx::New( &key );
+    let mut buf = "0123456789abcdef0123456789abcdef".as_bytes().to_vec();
+    let expected: Vec<u8> = vec![32,  30,  128, 47,  123, 106, 206, 111,
+                                 108, 208, 167, 67,  186, 120, 174, 173,
+                                 74,  49,  133, 217, 91,  1,   220, 189,
+                                 47,  33,  227, 59,  118, 130, 78,  109];
+    AES_CBC_encrypt_buffer( &mut aes_ctx, &mut buf );
+    assert_eq!( buf, expected );
+
+    let plain = "0123456789abcdef0123456789abcdef".as_bytes().to_vec();
+    aes_ctx.Iv.fill(0);
+    AES_CBC_decrypt_buffer( &mut aes_ctx, &mut buf );
+    assert_eq!( buf, plain );
+
   }
 }

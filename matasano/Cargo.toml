@@ -13,6 +13,9 @@ reqwest = { version = "0.11.20", features = ["blocking"] }
 [dependencies.aes]
 path = "../aes"
 
+[dependencies.utils]
+path = "../utils"
+
 [profile.dev] 
 debug = true  
 opt-level = 0
