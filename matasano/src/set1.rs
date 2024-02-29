@@ -71,15 +71,6 @@ pub fn break_repeating_xor_key( bytes: &[u8], nkeys: usize ) -> Vec<Vec<u8>> {
   keys
 }
 
-pub fn contains_duplicate( line: &str ) -> bool {
-  let mut v = line.as_bytes().chunks( 2 * aes::AES_KEYLEN ).collect::<Vec<&[u8]>>();
-  let all = v.len();
-  v.sort();
-  v.dedup();
-  let unique = v.len();
-  all != unique
-}
-
 #[cfg(test)]
 mod test {
   use std::collections::HashSet;
@@ -88,13 +79,14 @@ mod test {
   use crate::set1::repeating_xor_hex;
   use crate::set1::hamming_distance;
   use crate::set1::decrypt_hexstr;
-  use utils::base642hex;
+  use aes::AES_BLOCKLEN;
+use utils::base642hex;
   use crate::set1::BASE64CHARS;
   use crate::set1::break_repeating_xor_key;
   use utils::from_base64;
   use utils::hexstr2base64;
   use utils::xor_hexstr;
-  use crate::set1::contains_duplicate;
+  use utils::contains_duplicate;
 
   #[test]
   fn challange1() {
@@ -194,7 +186,7 @@ mod test {
     }
   }
 
-  use aes::AES_ECB_decrypt;
+  use aes::AES_ECB_decrypt_buffer;
   use aes::AES_ctx;
   use std::str;
 
@@ -209,7 +201,7 @@ mod test {
       let key = "YELLOW SUBMARINE".as_bytes();
       let aes_ctx = AES_ctx::New( &key );
   
-      AES_ECB_decrypt( &aes_ctx, &mut bytes );
+      AES_ECB_decrypt_buffer( &aes_ctx, &mut bytes );
       if let Ok( plain ) = str::from_utf8( &bytes ) {
         let fstline = "I'm back and I'm ringin' the bell".to_owned();
         assert_eq!( plain[..fstline.len()], fstline );
@@ -227,7 +219,7 @@ mod test {
   fn challange8() {
     if let Ok( txt ) = fs::read_to_string( "8.txt" ) {
       let txt = txt.replace( "\r\n", "\n" );
-      let aes_ecb = txt.split( "\n" ).filter( |l|contains_duplicate(*l) ).collect::<Vec<_>>();
+      let aes_ecb = txt.split( "\n" ).filter( |l|contains_duplicate( &from_base64( l.as_bytes() ), AES_BLOCKLEN ) ).collect::<Vec<_>>();
       let expected = "d880619740a8a19b7840a8a31c810a3d08649af70dc06f4fd5d2d69c744cd283e2dd052f6b641dbf9d11b0348542bb5708649af70dc06f4fd5d2d69c744cd2839475c9dfdbc1d46597949d9c7e82bf5a08649af70dc06f4fd5d2d69c744cd28397a93eab8d6aecd566489154789a6b0308649af70dc06f4fd5d2d69c744cd283d403180c98c8f6db1f2a3f9c4040deb0ab51b29933f2c123c58386b06fba186a".to_owned();
       assert_eq!( aes_ecb.len(), 1 );
       let line = aes_ecb[0];

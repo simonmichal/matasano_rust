@@ -1,5 +1,5 @@
 const Nb: usize = 4;
-const AES_BLOCKLEN: usize = 16;
+pub const AES_BLOCKLEN: usize = 16;
 
 // AES256
 // const Nk: u32 = 8;
@@ -158,10 +158,9 @@ impl AES_ctx {
     ctx
   }
 
-  pub fn NewWithIv( key: &str, iv: &[u8] ) -> AES_ctx {
-    let bytes = key.as_bytes();
+  pub fn NewWithIv( key: &[u8], iv: &[u8] ) -> AES_ctx {
     let mut ctx = AES_ctx{ RoundKey: [0; AES_keyExpSize], Iv: [0; AES_BLOCKLEN] };
-    KeyExpansion( &mut ctx.RoundKey, bytes );
+    KeyExpansion( &mut ctx.RoundKey, key );
     ctx.Iv.copy_from_slice( iv );
     ctx
   }
@@ -343,11 +342,16 @@ fn InvCipher( block: &mut [u8], RoundKey: &[u8] ) {
 // /*****************************************************************************/
 // /* Public functions:                                                         */
 // /*****************************************************************************/
-pub fn AES_ECB_encrypt( ctx: &AES_ctx, buf: &mut [u8] ) {
-  Cipher( buf, &ctx.RoundKey );
+pub fn AES_ECB_encrypt_buffer( ctx: &AES_ctx, buf: &mut [u8] ) {
+  // The next function call decrypts the PlainText with the Key using AES algorithm.
+  for i in 0 .. ( buf.len() / AES_KEYLEN ) {
+    let idx = i * AES_KEYLEN;
+    let block = &mut buf[idx .. idx + AES_KEYLEN];
+    Cipher( block, &ctx.RoundKey );
+  }
 }
 
-pub fn AES_ECB_decrypt( ctx: &AES_ctx, buf: &mut [u8] ) {
+pub fn AES_ECB_decrypt_buffer( ctx: &AES_ctx, buf: &mut [u8] ) {
   // The next function call decrypts the PlainText with the Key using AES algorithm.
   for i in 0 .. ( buf.len() / AES_KEYLEN ) {
     let idx = i * AES_KEYLEN;
@@ -432,7 +436,8 @@ mod test {
   use crate::AES_ctx;
   use crate::AES_keyExpSize;
   use crate::AddRoundKey;
-  use crate::SubBytes;
+  use crate::InvCipher;
+use crate::SubBytes;
   use crate::ShiftRows;
   use crate::MixColumns;
   use crate::Cipher;
@@ -502,9 +507,12 @@ mod test {
     let key = "YELLOW SUBMARINE".as_bytes();
     let aes_ctx = AES_ctx::New( &key );
     let mut block = "0123456789abcdef".as_bytes().to_vec();
+    let plain = "0123456789abcdef".as_bytes().to_vec();
     let expected: Vec<u8> = vec![32, 30, 128, 47, 123, 106, 206, 111, 108, 208, 167, 67, 186, 120, 174, 173];
     Cipher( &mut block, &aes_ctx.RoundKey );
     assert_eq!( block, expected );
+    InvCipher( &mut block, &aes_ctx.RoundKey );
+    assert_eq!( block, plain );
   }
 
   #[test]

@@ -278,3 +278,12 @@ pub fn base642hex( txt: &[u8] ) -> Vec<u8> {
   }
   result
 }
+
+pub fn contains_duplicate( line: &[u8], key_size: usize ) -> bool {
+  let mut v = line.chunks( key_size ).collect::<Vec<&[u8]>>();
+  let all = v.len();
+  v.sort();
+  v.dedup();
+  let unique = v.len();
+  all != unique
+}
