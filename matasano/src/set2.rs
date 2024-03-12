@@ -16,6 +16,23 @@ fn pkcs7_padding( block: &mut Vec<u8>, size: usize ) {
   }
 }
 
+fn pkcs7_padding_valid( block: &Vec<u8> ) -> bool {
+  if let Some( &padcnt ) = block.last() {
+    if block.len() < padcnt as usize { return false }
+    block.iter().rev().take( padcnt as usize ).all_equal()
+  }
+  else { true }
+}
+
+fn pkcs7_padding_strip( block: &mut Vec<u8> ) {
+  if let Some( &padcnt ) = block.last() {
+    let padcnt = padcnt as usize;
+    if block.len() < padcnt { return; }
+    if !block.iter().rev().take( padcnt ).all_equal() { return; }
+    block.resize( block.len() - padcnt, 0 );
+  }
+}
+
 fn get_random_buff() -> Vec<u8> {
   let len = rand::thread_rng().gen_range( 5..11 );
   rand::thread_rng().sample_iter( &Standard ).take( len ).collect()
@@ -50,6 +67,7 @@ pub trait Oracle {
 }
 
 pub struct AES_ECB_Encryptor {
+  prefix: Vec<u8>,
   key:    Vec<u8>,
   sufix:  Vec<u8>
 }
@@ -57,6 +75,16 @@ pub struct AES_ECB_Encryptor {
 impl AES_ECB_Encryptor {
   pub fn new() -> AES_ECB_Encryptor {
     AES_ECB_Encryptor{
+      prefix: Vec::new(),
+      key: rand::thread_rng().sample_iter( &Standard ).take( AES_BLOCKLEN ).collect(),
+      sufix: from_base64( "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK".as_bytes() )
+    }
+  }
+
+  pub fn with_prefix() -> AES_ECB_Encryptor {
+    let prefix_len = rand::thread_rng().gen_range( 5..35 );
+    AES_ECB_Encryptor{
+      prefix: rand::thread_rng().sample_iter( &Standard ).take( prefix_len ).collect(),
       key: rand::thread_rng().sample_iter( &Standard ).take( AES_BLOCKLEN ).collect(),
       sufix: from_base64( "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK".as_bytes() )
     }
@@ -65,7 +93,8 @@ impl AES_ECB_Encryptor {
 
 impl Oracle for AES_ECB_Encryptor {
   fn encrypt( &self, bytes: &[u8] ) -> Vec<u8> {
-    let mut result = Vec::with_capacity( bytes.len() + self.sufix.len() );
+    let mut result = Vec::with_capacity( self.prefix.len() + bytes.len() + self.sufix.len() );
+    result.extend_from_slice( &self.prefix );
     result.extend_from_slice( bytes );
     result.extend_from_slice( &self.sufix );
     pkcs7_padding( &mut result, AES_BLOCKLEN );
@@ -104,10 +133,68 @@ pub fn get_block_size( oracle: &AES_ECB_Encryptor ) -> usize {
   enclen - initlen
 }
 
-pub fn decrypt_sufix( oracle: &AES_ECB_Encryptor, block_size: usize ) -> Vec<u8> {
+pub fn get_prefix_len( oracle: &dyn Oracle, block_size: usize ) -> usize {
+  let tripple_block = vec![b'A'; block_size * 3];
+  let encrypted = oracle.encrypt( &tripple_block );
+  let mut result = 0;
+  if let Some( blkcnt ) = encrypted.chunks( block_size ).tuple_windows::<(_, _)>().position(|tpl|tpl.0 == tpl.1) {
+    let len = blkcnt * block_size;
+    let sufix_aligned = &encrypted[0 .. len];
+    let mut bytecnt = 0;
+    loop {
+      let chars = vec![b'A'; bytecnt];
+      let enc = oracle.encrypt( &chars );
+      if sufix_aligned == &enc[0 .. sufix_aligned.len() ] { break; }
+      bytecnt += 1;
+    }
+    result = len - bytecnt;
+  }
+  result
+}
 
-  let sufix = oracle.encrypt( &Vec::new() );
-  let blkcnt = sufix.len() / block_size;
+// pub fn decrypt_sufix( oracle: &AES_ECB_Encryptor, block_size: usize ) -> Vec<u8> {
+
+//   let sufix = oracle.encrypt( &Vec::new() );
+//   let blkcnt = sufix.len() / block_size;
+
+//   let mut alphanum = (b'a' .. b'z').collect_vec();
+//   alphanum.extend( ( b'A' .. b'Z' ).into_iter() );
+//   alphanum.extend( ( b'0' .. b'9' ).into_iter() );
+//   alphanum.append( &mut vec![b'.', b',', b'\'', b'!', b'"', b'?', b'(', b')', b':', b';', b' ', b'\t', b'\n', b'-'] );
+
+//   let mut result = Vec::new();
+//   for i in 1 ..= blkcnt {
+//     // one block
+//     for j in 1 ..= block_size {
+//       // one byte
+//       let mut incomplete = vec![b'A'; block_size - j];
+//       let mut fstblks = oracle.encrypt( &incomplete );
+//       fstblks.resize( block_size * i, 0 );
+//       let full = &mut incomplete;
+//       full.extend( result.iter() );
+//       for byte in alphanum.iter() {
+//         full.push( *byte );
+//         let mut encrypted = oracle.encrypt( &full );
+//         encrypted.resize( block_size * i, 0 );
+//         if encrypted == fstblks {
+//           result.push( *byte );
+//           break;
+//         }
+//         full.pop();
+//       }
+//     }
+//   }
+//   result
+// }
+
+pub fn decrypt_sufix( oracle: &dyn Oracle, block_size: usize ) -> Vec<u8> {
+
+  let mut prefix_len = get_prefix_len( oracle, block_size );
+  let prefix_aligment = vec![b'B'; block_size - ( prefix_len % block_size )];
+  prefix_len += prefix_aligment.len();
+
+  let encrypted = oracle.encrypt( &prefix_aligment );
+  let blkcnt = ( encrypted.len() - prefix_len ) / block_size;
 
   let mut alphanum = (b'a' .. b'z').collect_vec();
   alphanum.extend( ( b'A' .. b'Z' ).into_iter() );
@@ -119,16 +206,17 @@ pub fn decrypt_sufix( oracle: &AES_ECB_Encryptor, block_size: usize ) -> Vec<u8>
     // one block
     for j in 1 ..= block_size {
       // one byte
-      let mut incomplete = vec![b'A'; block_size - j];
-      let mut fstblks = oracle.encrypt( &incomplete );
-      fstblks.resize( block_size * i, 0 );
+      let mut incomplete = prefix_aligment.clone();
+      incomplete.extend_from_slice( &vec![b'A'; block_size - j] );
+      let mut encrypted = oracle.encrypt( &incomplete );
+      let fstblks = &mut encrypted[prefix_len .. prefix_len + block_size * i];
       let full = &mut incomplete;
       full.extend( result.iter() );
       for byte in alphanum.iter() {
         full.push( *byte );
-        let mut encrypted = oracle.encrypt( &full );
-        encrypted.resize( block_size * i, 0 );
-        if encrypted == fstblks {
+        let encrypted = oracle.encrypt( &full );
+        let blks = &encrypted[prefix_len .. prefix_len + block_size * i];
+        if blks == fstblks {
           result.push( *byte );
           break;
         }
@@ -204,27 +292,8 @@ impl Oracle for Profile_Encryptor {
   }
 }
 
-pub fn get_prefix_len( oracle: &Profile_Encryptor ) -> usize {
-  let tripple_block = ['A'; AES_BLOCKLEN * 3];
-  let encrypted = oracle.profile_for( &tripple_block.iter().collect::<String>() );
-  let mut result = 0;
-  if let Some( blkcnt ) = encrypted.chunks( AES_BLOCKLEN ).tuple_windows::<(_, _)>().position(|tpl|tpl.0 == tpl.1) {
-    let len = blkcnt * AES_BLOCKLEN;
-    let sufix_aligned = &encrypted[0 .. len];
-    let mut bytecnt = 0;
-    loop {
-      let chars = vec!['A'; bytecnt];
-      let enc = oracle.profile_for( &chars.iter().collect::<String>() );
-      if sufix_aligned == &enc[0 .. sufix_aligned.len() ] { break; }
-      bytecnt += 1;
-    }
-    result = len - bytecnt;
-  }
-  result
-}
-
 pub fn get_encrypted_block( oracle: &Profile_Encryptor, value: &str ) -> Vec<u8> {
-  let prefix_len = get_prefix_len( oracle );
+  let prefix_len = get_prefix_len( oracle, AES_BLOCKLEN );
   let aligment_len = AES_BLOCKLEN - ( prefix_len % AES_BLOCKLEN );
   let mut input = vec![b'A'; aligment_len]; // align the prefix with block size
   let mut value = value.as_bytes().to_vec();
@@ -271,6 +340,8 @@ mod test {
     use super::Oracle;
     use super::get_encrypted_block;
     use super::get_padcnt;
+    use super::pkcs7_padding_valid;
+    use super::pkcs7_padding_strip;
 
   #[test]
   fn challange9() {
@@ -337,7 +408,7 @@ mod test {
   fn challange13() {
 
     let oracle = Profile_Encryptor::new();
-    let prefix_len = get_prefix_len( &oracle );
+    let prefix_len = get_prefix_len( &oracle, AES_BLOCKLEN );
     assert_eq!( prefix_len, 6 );
   
     let adminblk = get_encrypted_block( &oracle, "admin" );
@@ -371,6 +442,33 @@ mod test {
     let mut expected = "email=mmm@gmail.com&uid=10&role=admin".as_bytes().to_vec();
     expected.append( &mut vec![11u8; 11] );
     assert_eq!( plain, expected );
+  }
+
+  #[test]
+  fn challange14() {
+    let oracle = AES_ECB_Encryptor::with_prefix();
+    let block_size = get_block_size( &oracle );
+    assert_eq!( block_size, AES_BLOCKLEN );
+    let encrypted = oracle.encrypt( &[0; 3 * AES_BLOCKLEN] );
+    let is_ecb = contains_duplicate( &encrypted, block_size );
+    assert!( is_ecb );
+    let decrypted = decrypt_sufix( &oracle, block_size );
+    let expected = from_base64( "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK".as_bytes() );
+    assert_eq!( decrypted, expected );
+  }
+
+  #[test]
+  fn challange15() {
+    let mut valid = "ICE ICE BABY\x04\x04\x04\x04".as_bytes().to_vec();
+    assert!( pkcs7_padding_valid( &valid ) );
+    pkcs7_padding_strip( &mut valid );
+    let expected = "ICE ICE BABY".as_bytes().to_vec();
+    assert_eq!( valid, expected );
+
+    let invalid = "ICE ICE BABY\x05\x05\x05\x05".as_bytes().to_vec();
+    assert!( !pkcs7_padding_valid( &invalid ) );
+    let invalid = "ICE ICE BABY\x01\x02\x03\x04".as_bytes().to_vec();
+    assert!( !pkcs7_padding_valid( &invalid ) );
   }
 
 }
