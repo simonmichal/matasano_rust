@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
 use rand::{distributions::{Alphanumeric, Standard}, Rng};
-use aes::{AES_ECB_decrypt_buffer, AES_ctx};
+use aes::AES_ctx;
 use aes::AES_BLOCKLEN;
 use aes::AES_ECB_encrypt_buffer;
+use aes::AES_ECB_decrypt_buffer;
 use aes::AES_CBC_encrypt_buffer;
+use aes::AES_CBC_decrypt_buffer;
 use utils::{contains_duplicate, from_base64};
 use itertools::Itertools;
+use urlencoding::encode as urlencode;
 
-fn pkcs7_padding( block: &mut Vec<u8>, size: usize ) {
+pub fn pkcs7_padding( block: &mut Vec<u8>, size: usize ) {
   if block.len() % size == 0 { return; }
   let val: u8 = ( size - block.len() % size ) as u8;
   for _ in 0 .. val {
@@ -152,41 +155,6 @@ pub fn get_prefix_len( oracle: &dyn Oracle, block_size: usize ) -> usize {
   result
 }
 
-// pub fn decrypt_sufix( oracle: &AES_ECB_Encryptor, block_size: usize ) -> Vec<u8> {
-
-//   let sufix = oracle.encrypt( &Vec::new() );
-//   let blkcnt = sufix.len() / block_size;
-
-//   let mut alphanum = (b'a' .. b'z').collect_vec();
-//   alphanum.extend( ( b'A' .. b'Z' ).into_iter() );
-//   alphanum.extend( ( b'0' .. b'9' ).into_iter() );
-//   alphanum.append( &mut vec![b'.', b',', b'\'', b'!', b'"', b'?', b'(', b')', b':', b';', b' ', b'\t', b'\n', b'-'] );
-
-//   let mut result = Vec::new();
-//   for i in 1 ..= blkcnt {
-//     // one block
-//     for j in 1 ..= block_size {
-//       // one byte
-//       let mut incomplete = vec![b'A'; block_size - j];
-//       let mut fstblks = oracle.encrypt( &incomplete );
-//       fstblks.resize( block_size * i, 0 );
-//       let full = &mut incomplete;
-//       full.extend( result.iter() );
-//       for byte in alphanum.iter() {
-//         full.push( *byte );
-//         let mut encrypted = oracle.encrypt( &full );
-//         encrypted.resize( block_size * i, 0 );
-//         if encrypted == fstblks {
-//           result.push( *byte );
-//           break;
-//         }
-//         full.pop();
-//       }
-//     }
-//   }
-//   result
-// }
-
 pub fn decrypt_sufix( oracle: &dyn Oracle, block_size: usize ) -> Vec<u8> {
 
   let mut prefix_len = get_prefix_len( oracle, block_size );
@@ -318,6 +286,56 @@ pub fn get_padcnt( oracle: &dyn Oracle, bytes: &[u8] ) -> usize {
   buffer.len() - bytes.len() - 1
 }
 
+pub struct AES_CBC_Encryptor {
+  prefix: Vec<u8>,
+  key:    Vec<u8>,
+  iv:     Vec<u8>,
+  sufix:  Vec<u8>
+}
+
+impl AES_CBC_Encryptor {
+  pub fn new() -> AES_CBC_Encryptor {
+    AES_CBC_Encryptor{
+      prefix: b"comment1=cooking%20MCs;userdata=".to_vec(),
+      key: rand::thread_rng().sample_iter( &Standard ).take( AES_BLOCKLEN ).collect(),
+      iv: rand::thread_rng().sample_iter( &Standard ).take( AES_BLOCKLEN ).collect(),
+      sufix: b";comment2=%20like%20a%20pound%20of%20bacon".to_vec()
+    }
+  }
+
+  pub fn encrypt_userdata( &self, data: &str ) -> Vec<u8> {
+    let encoded = urlencode( data ).into_owned();
+    self.encrypt( encoded.as_bytes() )
+  }
+
+  pub fn is_admin( &self, encrypted: &[u8] ) -> bool {
+    let decrypted = self.decrypt( encrypted );
+    let admstr = b";admin=true;".to_vec();
+    let pos = decrypted.windows( admstr.len() ).position(|win| win == admstr );
+    pos.is_some()
+  }
+}
+
+impl Oracle for AES_CBC_Encryptor {
+  fn encrypt( &self, bytes: &[u8] ) -> Vec<u8> {
+    let mut result = Vec::with_capacity( self.prefix.len() + bytes.len() + self.sufix.len() );
+    result.extend_from_slice( &self.prefix );
+    result.extend_from_slice( bytes );
+    result.extend_from_slice( &self.sufix );
+    pkcs7_padding( &mut result, AES_BLOCKLEN );
+    let mut aes_ctx = AES_ctx::NewWithIv( &self.key, &self.iv );
+    AES_CBC_encrypt_buffer( &mut aes_ctx, &mut result );
+    result
+  }
+
+  fn decrypt( &self, bytes: &[u8] ) -> Vec<u8> {
+    let mut result = bytes.to_vec();
+    let mut aes_ctx = AES_ctx::NewWithIv( &self.key, &self.iv );
+    AES_CBC_decrypt_buffer( &mut aes_ctx, &mut result );
+    result
+  }
+}
+
 #[cfg(test)]
 mod test {
     use std::fs;
@@ -342,6 +360,7 @@ mod test {
     use super::get_padcnt;
     use super::pkcs7_padding_valid;
     use super::pkcs7_padding_strip;
+    use super::AES_CBC_Encryptor;
 
   #[test]
   fn challange9() {
@@ -469,6 +488,33 @@ mod test {
     assert!( !pkcs7_padding_valid( &invalid ) );
     let invalid = "ICE ICE BABY\x01\x02\x03\x04".as_bytes().to_vec();
     assert!( !pkcs7_padding_valid( &invalid ) );
+  }
+
+  #[test]
+  fn challange16() {
+    let oracle = AES_CBC_Encryptor::new();
+    let encrypted = oracle.encrypt( b"some random text" );
+    let decrypted = oracle.decrypt( &encrypted );
+    let mut expected = b"comment1=cooking%20MCs;userdata=some random text;comment2=%20like%20a%20pound%20of%20bacon".to_vec();
+    pkcs7_padding( &mut expected, AES_BLOCKLEN );
+    assert_eq!( decrypted, expected );
+
+    let encrypted = oracle.encrypt_userdata( "some random text" );
+    let decrypted = oracle.decrypt( &encrypted );
+    let mut expected = b"comment1=cooking%20MCs;userdata=some%20random%20text;comment2=%20like%20a%20pound%20of%20bacon".to_vec();
+    pkcs7_padding( &mut expected, AES_BLOCKLEN );
+    assert_eq!( decrypted, expected );
+
+    let encrypted = oracle.encrypt_userdata( "completediameter;admin=true;" );
+    assert!( !oracle.is_admin( &encrypted ) );
+
+    let mut encrypted = oracle.encrypt_userdata( "completediameterxxxxxxxxxxxx" );
+    let bytes = b"xxxxxxxxxxxx".to_vec();
+    let admin: Vec<u8> = b";admin=true;".to_vec();
+    let flip = bytes.iter().zip( admin.iter() ).map(|(lhs, rhs)| *lhs ^ *rhs ).collect::<Vec<_>>();
+    let prevblk = &mut encrypted[AES_BLOCKLEN * 2 .. AES_BLOCKLEN * 2 + flip.len()];
+    prevblk.iter_mut().zip( flip.iter() ).for_each(|(lhs, rhs)| *lhs ^= *rhs );
+    assert!( oracle.is_admin( &encrypted ) )
   }
 
 }
