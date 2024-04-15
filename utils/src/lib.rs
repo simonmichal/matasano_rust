@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
-use hex::{self, ToHex};
+use itertools::Itertools;
+use aes::AES_BLOCKLEN;
 
 pub static BASE64CHARS: [u8; 64] = [b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H',
                                 b'I', b'J', b'K', b'L', b'M', b'N', b'O', b'P',
@@ -245,7 +245,7 @@ pub fn quartet2bytes( quartet: &[u8] ) -> Vec<u8> {
     bits = bits << 6;
     bits = bits | v;
   }
-  let mut bytes = vec![0, 0, 0];
+  let mut bytes = vec![0; cnt];
   // convert into 3 bytes
   if cnt == 3 {
     bytes[2] = ( bits & 0xff ) as u8;
@@ -261,7 +261,7 @@ pub fn quartet2bytes( quartet: &[u8] ) -> Vec<u8> {
   bytes
 }
 
-pub fn from_base64( txt: &[u8] ) -> Vec<u8> { // TODO implement padding (=)
+pub fn from_base64( txt: &[u8] ) -> Vec<u8> {
   let mut result = Vec::new();
   for i in ( 0 .. txt.len() ).step_by( 4 ) {
     let mut bytes = quartet2bytes( &txt[i ..] );
@@ -286,4 +286,36 @@ pub fn contains_duplicate( line: &[u8], key_size: usize ) -> bool {
   v.dedup();
   let unique = v.len();
   all != unique
+}
+
+pub fn pkcs7_padding( block: &mut Vec<u8>, size: usize ) {
+  let mut val = ( size - block.len() % size ) as u8;
+  for _ in 0 .. val {
+    block.push( val );
+  }
+}
+
+pub fn pkcs7_padding_valid( block: &Vec<u8> ) -> bool { // is this correct ???
+  if let Some( &padcnt ) = block.last() {
+    if block.len() < padcnt as usize { return false; }
+    if padcnt < 1 || padcnt > AES_BLOCKLEN as u8 { return false; }
+    block.iter().rev().take( padcnt as usize ).all_equal()
+  }
+  else { true }
+}
+
+pub fn pkcs7_padding_len( block: &Vec<u8> ) -> usize {
+  if let Some( &padcnt ) = block.last() {
+    padcnt as usize
+  }
+  else { 0 }
+}
+
+pub fn pkcs7_padding_strip( block: &mut Vec<u8> ) {
+  if let Some( &padcnt ) = block.last() {
+    let padcnt = padcnt as usize;
+    if block.len() < padcnt { return; }
+    if !block.iter().rev().take( padcnt ).all_equal() { return; }
+    block.resize( block.len() - padcnt, 0 );
+  }
 }

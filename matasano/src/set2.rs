@@ -7,34 +7,9 @@ use aes::AES_ECB_encrypt_buffer;
 use aes::AES_ECB_decrypt_buffer;
 use aes::AES_CBC_encrypt_buffer;
 use aes::AES_CBC_decrypt_buffer;
-use utils::{contains_duplicate, from_base64};
+use utils::{contains_duplicate, from_base64, pkcs7_padding, pkcs7_padding_valid, pkcs7_padding_strip};
 use itertools::Itertools;
 use urlencoding::encode as urlencode;
-
-pub fn pkcs7_padding( block: &mut Vec<u8>, size: usize ) {
-  if block.len() % size == 0 { return; }
-  let val: u8 = ( size - block.len() % size ) as u8;
-  for _ in 0 .. val {
-    block.push( val );
-  }
-}
-
-fn pkcs7_padding_valid( block: &Vec<u8> ) -> bool {
-  if let Some( &padcnt ) = block.last() {
-    if block.len() < padcnt as usize { return false }
-    block.iter().rev().take( padcnt as usize ).all_equal()
-  }
-  else { true }
-}
-
-fn pkcs7_padding_strip( block: &mut Vec<u8> ) {
-  if let Some( &padcnt ) = block.last() {
-    let padcnt = padcnt as usize;
-    if block.len() < padcnt { return; }
-    if !block.iter().rev().take( padcnt ).all_equal() { return; }
-    block.resize( block.len() - padcnt, 0 );
-  }
-}
 
 fn get_random_buff() -> Vec<u8> {
   let len = rand::thread_rng().gen_range( 5..11 );
@@ -283,7 +258,7 @@ pub fn get_padcnt( oracle: &dyn Oracle, bytes: &[u8] ) -> usize {
     encrypted = oracle.encrypt( &buffer );
     enclen = encrypted.len();
   }
-  buffer.len() - bytes.len() - 1
+  buffer.len() - bytes.len()
 }
 
 pub struct AES_CBC_Encryptor {
