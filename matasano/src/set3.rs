@@ -137,6 +137,8 @@ mod test {
   use super::Token_Encryptor;
   use super::get_block_dec;
   use aes::AES_BLOCKLEN;
+  use aes::AES_CTR_transform_buffer;
+  use utils::from_base64;
 
   #[test]
   fn challange17a() {
@@ -167,5 +169,15 @@ mod test {
 
     let expected = oracle.get_token_dec();
     assert_eq!( result, expected );
+  }
+
+  #[test]
+  fn challange18() {
+    let mut bytes = from_base64( b"L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==" );
+    let key = b"YELLOW SUBMARINE".to_vec();
+    let nonce = 0u64;
+    AES_CTR_transform_buffer( &mut bytes, &key, 0 );
+    let expected = b"Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby ";
+    assert_eq!( bytes, expected );
   }
 }
