@@ -139,10 +139,7 @@ pub fn decrypt_sufix( oracle: &dyn Oracle, block_size: usize ) -> Vec<u8> {
   let encrypted = oracle.encrypt( &prefix_aligment );
   let blkcnt = ( encrypted.len() - prefix_len ) / block_size;
 
-  let mut alphanum = (b'a' .. b'z').collect_vec();
-  alphanum.extend( ( b'A' .. b'Z' ).into_iter() );
-  alphanum.extend( ( b'0' .. b'9' ).into_iter() );
-  alphanum.append( &mut vec![b'.', b',', b'\'', b'!', b'"', b'?', b'(', b')', b':', b';', b' ', b'\t', b'\n', b'-'] );
+  let alphanum = (0u8 ..= u8::MAX).collect_vec();
 
   let mut result = Vec::new();
   for i in 1 ..= blkcnt {
@@ -166,6 +163,11 @@ pub fn decrypt_sufix( oracle: &dyn Oracle, block_size: usize ) -> Vec<u8> {
         full.pop();
       }
     }
+  }
+  if pkcs7_padding_valid( &result ) {
+    let mut res = result.clone();
+    pkcs7_padding_strip( &mut res );
+    return res;
   }
   result
 }
@@ -242,7 +244,6 @@ pub fn get_encrypted_block( oracle: &Profile_Encryptor, value: &str ) -> Vec<u8>
   let mut value = value.as_bytes().to_vec();
   pkcs7_padding( &mut value, AES_BLOCKLEN );
   input.append( &mut value );
-  input.extend( value.iter() );
   let encrypted = oracle.encrypt( &input );
   encrypted[ prefix_len + aligment_len .. prefix_len + aligment_len + AES_BLOCKLEN].to_vec()
 }

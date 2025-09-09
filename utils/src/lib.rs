@@ -295,11 +295,11 @@ pub fn pkcs7_padding( block: &mut Vec<u8>, size: usize ) {
   }
 }
 
-pub fn pkcs7_padding_valid( block: &Vec<u8> ) -> bool { // is this correct ???
+pub fn pkcs7_padding_valid( block: &Vec<u8> ) -> bool {
   if let Some( &padcnt ) = block.last() {
-    if block.len() < padcnt as usize { return false; }
-    if padcnt < 1 || padcnt > AES_BLOCKLEN as u8 { return false; }
-    block.iter().rev().take( padcnt as usize ).all_equal()
+    let n = padcnt as usize;
+    if n == 0 || n > AES_BLOCKLEN || n > block.len() { return false; }
+    block.iter().rev().take( n ).all(|b| *b == padcnt)
   }
   else { true }
 }
@@ -313,9 +313,10 @@ pub fn pkcs7_padding_len( block: &Vec<u8> ) -> usize {
 
 pub fn pkcs7_padding_strip( block: &mut Vec<u8> ) {
   if let Some( &padcnt ) = block.last() {
-    let padcnt = padcnt as usize;
-    if block.len() < padcnt { return; }
-    if !block.iter().rev().take( padcnt ).all_equal() { return; }
-    block.resize( block.len() - padcnt, 0 );
+    let n = padcnt as usize;
+    if n == 0 || n > AES_BLOCKLEN || n > block.len() { return; }
+    if block.iter().rev().take( n ).all(|b| *b == padcnt) {
+      block.truncate( block.len() - n );
+    }
   }
 }
