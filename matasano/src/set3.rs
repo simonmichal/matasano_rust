@@ -6,6 +6,7 @@ use aes::AES_CBC_encrypt_buffer;
 use aes::AES_CBC_decrypt_buffer;
 use aes::AES_CTR_transform_buffer;
 use utils::{from_base64, pkcs7_padding, pkcs7_padding_valid, pkcs7_padding_len};
+use utils::rate_bytes;
 
 fn get_token() -> Vec<u8> {
   let TOKENS : [Vec<u8>; 10] = [
@@ -102,6 +103,37 @@ pub fn challenge19_ciphertexts() -> Vec<Vec<u8>> {
     .map(|l| from_base64( &l ))
     .map(|plain| enc.encrypt_fixed_nonce( &plain ))
     .collect()
+}
+
+fn recover_keystream_columnwise( cts: &[Vec<u8>] ) -> Vec<u8> {
+  let max_len = cts.iter().map(|v| v.len()).max().unwrap_or(0);
+  let mut keystream = vec![0u8; max_len];
+  for i in 0 .. max_len {
+    let column: Vec<u8> = cts.iter().filter_map(|ct| ct.get(i).copied()).collect();
+    if column.is_empty() { continue; }
+    let mut best_score = i32::MIN;
+    let mut best_k = 0u8;
+    for k in 0u8 ..= u8::MAX {
+      let candidate_plain: Vec<u8> = column.iter().map(|b| b ^ k).collect();
+      let score = rate_bytes( &candidate_plain );
+      if score > best_score {
+        best_score = score;
+        best_k = k;
+      }
+    }
+    keystream[i] = best_k;
+  }
+  keystream
+}
+
+fn decrypt_with_keystream( cts: &[Vec<u8>], ks: &[u8] ) -> Vec<Vec<u8>> {
+  cts.iter().map(|ct| ct.iter().enumerate().map(|(i, &c)| c ^ ks[i]).collect()).collect()
+}
+
+pub fn challenge19_break() -> Vec<Vec<u8>> {
+  let cts = challenge19_ciphertexts();
+  let ks = recover_keystream_columnwise( &cts );
+  decrypt_with_keystream( &cts, &ks )
 }
 
 pub struct Token_Encryptor {
