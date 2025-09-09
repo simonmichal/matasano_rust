@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use itertools::Itertools;
 use aes::AES_BLOCKLEN;
+use rand::{distributions::Standard, Rng};
 
 pub static BASE64CHARS: [u8; 64] = [b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H',
                                 b'I', b'J', b'K', b'L', b'M', b'N', b'O', b'P',
@@ -318,4 +319,9 @@ pub fn pkcs7_padding_strip( block: &mut Vec<u8> ) {
     if !block.iter().rev().take( padcnt ).all_equal() { return; }
     block.resize( block.len() - padcnt, 0 );
   }
+}
+
+pub fn get_random_buff() -> Vec<u8> {
+  let len = rand::thread_rng().gen_range( 5..11 );
+  rand::thread_rng().sample_iter( &Standard ).take( len ).collect()
 }

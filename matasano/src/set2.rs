@@ -11,10 +11,7 @@ use utils::{contains_duplicate, from_base64, pkcs7_padding, pkcs7_padding_valid,
 use itertools::Itertools;
 use urlencoding::encode as urlencode;
 
-fn get_random_buff() -> Vec<u8> {
-  let len = rand::thread_rng().gen_range( 5..11 );
-  rand::thread_rng().sample_iter( &Standard ).take( len ).collect()
-}
+use utils::get_random_buff;
 
 fn get_random_block() -> Vec<u8> {
   rand::thread_rng().sample_iter( &Standard ).take( AES_BLOCKLEN ).collect()
