@@ -4,6 +4,7 @@ use aes::AES_BLOCKLEN;
 use aes::AES_ctx;
 use aes::AES_CBC_encrypt_buffer;
 use aes::AES_CBC_decrypt_buffer;
+use aes::AES_CTR_transform_buffer;
 use utils::{from_base64, pkcs7_padding, pkcs7_padding_valid, pkcs7_padding_len};
 
 fn get_token() -> Vec<u8> {
@@ -130,12 +131,45 @@ pub fn get_block_dec( iv: &[u8], block: &[u8], oracle: &Token_Encryptor, mut pad
   result
 }
 
+// ---------- Challenge 19/20 helper: break fixed-nonce CTR by column scoring ----------
+
+fn score_bytes( bytes: &[u8] ) -> i32 {
+  utils::rate_bytes( bytes )
+}
+
+pub fn guess_keystream_for_fixed_nonce_ctr( ciphertexts: &[Vec<u8>] ) -> Vec<u8> {
+  let max_len = ciphertexts.iter().map( |c| c.len() ).max().unwrap_or(0);
+  let mut keystream = Vec::with_capacity( max_len );
+  for i in 0 .. max_len {
+    let column: Vec<u8> = ciphertexts.iter().filter_map( |c| if c.len() > i { Some(c[i]) } else { None } ).collect();
+    if column.is_empty() { break; }
+    let mut best_key = 0u8;
+    let mut best_score = i32::MIN;
+    for k in 0u8 ..= u8::MAX {
+      let candidate_plain: Vec<u8> = column.iter().map( |b| b ^ k ).collect();
+      let score = score_bytes( &candidate_plain );
+      if score > best_score {
+        best_score = score;
+        best_key = k;
+      }
+    }
+    keystream.push( best_key );
+  }
+  keystream
+}
+
+pub fn apply_keystream( data: &[u8], keystream: &[u8] ) -> Vec<u8> {
+  data.iter().zip( keystream.iter() ).map( |(d, k)| d ^ k ).collect()
+}
+
 #[cfg(test)]
 mod test {
 
   use crate::set3::get_padding_len;
   use super::Token_Encryptor;
   use super::get_block_dec;
+  use super::guess_keystream_for_fixed_nonce_ctr;
+  use super::apply_keystream;
   use aes::AES_BLOCKLEN;
   use aes::AES_CTR_transform_buffer;
   use utils::from_base64;
@@ -179,5 +213,41 @@ mod test {
     AES_CTR_transform_buffer( &mut bytes, &key, 0 );
     let expected = b"Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby ";
     assert_eq!( bytes, expected );
+  }
+
+  #[test]
+  fn challange19() {
+    let tokens : [Vec<u8>; 10] = [
+      b"MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=".to_vec(),
+      b"MDAwMDAxV2l0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=".to_vec(),
+      b"MDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==".to_vec(),
+      b"MDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==".to_vec(),
+      b"MDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl".to_vec(),
+      b"MDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==".to_vec(),
+      b"MDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==".to_vec(),
+      b"MDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=".to_vec(),
+      b"MDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=".to_vec(),
+      b"MDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93".to_vec()
+    ];
+
+    // Prepare plaintexts
+    let mut plains: Vec<Vec<u8>> = tokens.iter().map( |t| from_base64( t ) ).collect();
+
+    // Encrypt with fixed-nonce CTR
+    let key: Vec<u8> = rand::thread_rng().sample_iter( &rand::distributions::Standard ).take( AES_BLOCKLEN ).collect();
+    let nonce = 0u64;
+    let mut cts: Vec<Vec<u8>> = plains.iter().map( |p| p.clone() ).collect();
+    for ct in cts.iter_mut() {
+      AES_CTR_transform_buffer( ct, &key, nonce );
+    }
+
+    // Break keystream by column scoring
+    let ks = guess_keystream_for_fixed_nonce_ctr( &cts );
+
+    // Decrypt and verify
+    for (i, ct) in cts.iter().enumerate() {
+      let pt = apply_keystream( ct, &ks[0 .. ct.len()] );
+      assert_eq!( pt, plains[i] );
+    }
   }
 }
