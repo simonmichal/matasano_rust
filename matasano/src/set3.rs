@@ -131,12 +131,6 @@ pub fn get_block_dec( iv: &[u8], block: &[u8], oracle: &Token_Encryptor, mut pad
   result
 }
 
-// ---------- Challenge 19/20 helper: break fixed-nonce CTR by column scoring ----------
-
-fn score_bytes( bytes: &[u8] ) -> i32 {
-  utils::rate_bytes( bytes )
-}
-
 pub fn guess_keystream_for_fixed_nonce_ctr( ciphertexts: &[Vec<u8>] ) -> Vec<u8> {
   let max_len = ciphertexts.iter().map( |c| c.len() ).max().unwrap_or(0);
   let mut keystream = Vec::with_capacity( max_len );
@@ -147,7 +141,7 @@ pub fn guess_keystream_for_fixed_nonce_ctr( ciphertexts: &[Vec<u8>] ) -> Vec<u8>
     let mut best_score = i32::MIN;
     for k in 0u8 ..= u8::MAX {
       let candidate_plain: Vec<u8> = column.iter().map( |b| b ^ k ).collect();
-      let score = score_bytes( &candidate_plain );
+      let score = utils::rate_bytes( &candidate_plain );
       if score > best_score {
         best_score = score;
         best_key = k;
@@ -158,10 +152,6 @@ pub fn guess_keystream_for_fixed_nonce_ctr( ciphertexts: &[Vec<u8>] ) -> Vec<u8>
   keystream
 }
 
-pub fn apply_keystream( data: &[u8], keystream: &[u8] ) -> Vec<u8> {
-  data.iter().zip( keystream.iter() ).map( |(d, k)| d ^ k ).collect()
-}
-
 #[cfg(test)]
 mod test {
 
@@ -169,7 +159,6 @@ mod test {
   use super::Token_Encryptor;
   use super::get_block_dec;
   use super::guess_keystream_for_fixed_nonce_ctr;
-  use super::apply_keystream;
   use aes::AES_BLOCKLEN;
   use aes::AES_CTR_transform_buffer;
   use utils::from_base64;
@@ -246,7 +235,7 @@ mod test {
 
     // Decrypt and verify
     for (i, ct) in cts.iter().enumerate() {
-      let pt = apply_keystream( ct, &ks[0 .. ct.len()] );
+      let pt: Vec<u8> = ct.iter().zip( ks.iter() ).take( ct.len() ).map( |(d,k)| d ^ k ).collect();
       assert_eq!( pt, plains[i] );
     }
   }
