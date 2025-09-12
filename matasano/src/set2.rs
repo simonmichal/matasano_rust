@@ -7,18 +7,11 @@ use aes::AES_ECB_encrypt_buffer;
 use aes::AES_ECB_decrypt_buffer;
 use aes::AES_CBC_encrypt_buffer;
 use aes::AES_CBC_decrypt_buffer;
-use utils::{contains_duplicate, from_base64, pkcs7_padding, pkcs7_padding_valid, pkcs7_padding_strip};
+use utils::{contains_duplicate, from_base64, pkcs7_padding, pkcs7_padding_valid, pkcs7_padding_strip, get_random_buff, get_random_block};
 use itertools::Itertools;
 use urlencoding::encode as urlencode;
 
-fn get_random_buff() -> Vec<u8> {
-  let len = rand::thread_rng().gen_range( 5..11 );
-  rand::thread_rng().sample_iter( &Standard ).take( len ).collect()
-}
 
-fn get_random_block() -> Vec<u8> {
-  rand::thread_rng().sample_iter( &Standard ).take( AES_BLOCKLEN ).collect()
-}
 
 pub fn random_encrypt( bytes: &[u8], ecb: &mut bool ) -> Vec<u8> {
   let mut result = get_random_buff(); // prefix

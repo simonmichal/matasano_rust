@@ -4,7 +4,7 @@ use aes::AES_BLOCKLEN;
 use aes::AES_ctx;
 use aes::AES_CBC_encrypt_buffer;
 use aes::AES_CBC_decrypt_buffer;
-use utils::{from_base64, pkcs7_padding, pkcs7_padding_valid, pkcs7_padding_len};
+use utils::{from_base64, pkcs7_padding, pkcs7_padding_valid, pkcs7_padding_len, get_key};
 
 fn get_token() -> Vec<u8> {
   let TOKENS : [Vec<u8>; 10] = [
@@ -130,6 +130,23 @@ pub fn get_block_dec( iv: &[u8], block: &[u8], oracle: &Token_Encryptor, mut pad
   result
 }
 
+fn recover_keystream(cipher_txt: &[Vec<u8>]) -> Vec<u8> {
+  let max_len = cipher_txt.iter().map(|c| c.len()).max().unwrap_or(0);
+  let mut ks = vec![0u8; max_len];
+  for i in 0..max_len {
+    // Collect i-th column bytes
+    let column: Vec<u8> = cipher_txt
+        .iter()
+        .filter_map(|c| if i < c.len() { Some(c[i]) } else { None })
+        .collect();
+    if column.is_empty() {
+      continue;
+    }
+    (_, ks[i]) = get_key(&column); // from set1 challenge 6
+  }
+  ks
+}
+
 #[cfg(test)]
 mod test {
 
@@ -139,6 +156,9 @@ mod test {
   use aes::AES_BLOCKLEN;
   use aes::AES_CTR_transform_buffer;
   use utils::from_base64;
+  use utils::get_random_block;
+  use crate::recover_keystream;
+  use crate::set1::repeating_xor;
 
   #[test]
   fn challange17a() {
@@ -179,5 +199,70 @@ mod test {
     AES_CTR_transform_buffer( &mut bytes, &key, 0 );
     let expected = b"Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby ";
     assert_eq!( bytes, expected );
+  }
+
+  #[test]
+  fn challange19() {
+    let LINES = [
+      b"SSBoYXZlIG1ldCB0aGVtIGF0IGNsb3NlIG9mIGRheQ==".to_vec(),
+      b"Q29taW5nIHdpdGggdml2aWQgZmFjZXM=".to_vec(),
+      b"RnJvbSBjb3VudGVyIG9yIGRlc2sgYW1vbmcgZ3JleQ==".to_vec(),
+      b"RWlnaHRlZW50aC1jZW50dXJ5IGhvdXNlcy4=".to_vec(),
+      b"SSBoYXZlIHBhc3NlZCB3aXRoIGEgbm9kIG9mIHRoZSBoZWFk".to_vec(),
+      b"T3IgcG9saXRlIG1lYW5pbmdsZXNzIHdvcmRzLA==".to_vec(),
+      b"T3IgaGF2ZSBsaW5nZXJlZCBhd2hpbGUgYW5kIHNhaWQ=".to_vec(),
+      b"UG9saXRlIG1lYW5pbmdsZXNzIHdvcmRzLA==".to_vec(),
+      b"QW5kIHRob3VnaHQgYmVmb3JlIEkgaGFkIGRvbmU=".to_vec(),
+      b"T2YgYSBtb2NraW5nIHRhbGUgb3IgYSBnaWJl".to_vec(),
+      b"VG8gcGxlYXNlIGEgY29tcGFuaW9u".to_vec(),
+      b"QXJvdW5kIHRoZSBmaXJlIGF0IHRoZSBjbHViLA==".to_vec(),
+      b"QmVpbmcgY2VydGFpbiB0aGF0IHRoZXkgYW5kIEk=".to_vec(),
+      b"QnV0IGxpdmVkIHdoZXJlIG1vdGxleSBpcyB3b3JuOg==".to_vec(),
+      b"QWxsIGNoYW5nZWQsIGNoYW5nZWQgdXR0ZXJseTo=".to_vec(),
+      b"QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=".to_vec(),
+      b"VGhhdCB3b21hbidzIGRheXMgd2VyZSBzcGVudA==".to_vec(),
+      b"SW4gaWdub3JhbnQgZ29vZCB3aWxsLA==".to_vec(),
+      b"SGVyIG5pZ2h0cyBpbiBhcmd1bWVudA==".to_vec(),
+      b"VW50aWwgaGVyIHZvaWNlIGdyZXcgc2hyaWxsLg==".to_vec(),
+      b"V2hhdCB2b2ljZSBtb3JlIHN3ZWV0IHRoYW4gaGVycw==".to_vec(),
+      b"V2hlbiB5b3VuZyBhbmQgYmVhdXRpZnVsLA==".to_vec(),
+      b"U2hlIHJvZGUgdG8gaGFycmllcnM/".to_vec(),
+      b"VGhpcyBtYW4gaGFkIGtlcHQgYSBzY2hvb2w=".to_vec(),
+      b"QW5kIHJvZGUgb3VyIHdpbmdlZCBob3JzZS4=".to_vec(),
+      b"VGhpcyBvdGhlciBoaXMgaGVscGVyIGFuZCBmcmllbmQ=".to_vec(),
+      b"V2FzIGNvbWluZyBpbnRvIGhpcyBmb3JjZTs=".to_vec(),
+      b"SGUgbWlnaHQgaGF2ZSB3b24gZmFtZSBpbiB0aGUgZW5kLA==".to_vec(),
+      b"U28gc2Vuc2l0aXZlIGhpcyBuYXR1cmUgc2VlbWVkLA==".to_vec(),
+      b"U28gZGFyaW5nIGFuZCBzd2VldCBoaXMgdGhvdWdodC4=".to_vec(),
+      b"VGhpcyBvdGhlciBtYW4gSSBoYWQgZHJlYW1lZA==".to_vec(),
+      b"QSBkcnVua2VuLCB2YWluLWdsb3Jpb3VzIGxvdXQu".to_vec(),
+      b"SGUgaGFkIGRvbmUgbW9zdCBiaXR0ZXIgd3Jvbmc=".to_vec(),
+      b"VG8gc29tZSB3aG8gYXJlIG5lYXIgbXkgaGVhcnQs".to_vec(),
+      b"WWV0IEkgbnVtYmVyIGhpbSBpbiB0aGUgc29uZzs=".to_vec(),
+      b"SGUsIHRvbywgaGFzIHJlc2lnbmVkIGhpcyBwYXJ0".to_vec(),
+      b"SW4gdGhlIGNhc3VhbCBjb21lZHk7".to_vec(),
+      b"SGUsIHRvbywgaGFzIGJlZW4gY2hhbmdlZCBpbiBoaXMgdHVybiw=".to_vec(),
+      b"VHJhbnNmb3JtZWQgdXR0ZXJseTo=".to_vec(),
+      b"QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=".to_vec()
+    ];
+    let common_len = LINES.iter().map(|c| c.len()).min().unwrap_or(0);
+    let key = get_random_block();
+    let cipher_txt = LINES.iter()
+        .map(|l| from_base64( &l ))
+        .map(|plain| {
+          let mut buf = plain.to_vec();
+          AES_CTR_transform_buffer( &mut buf, &key, 0 );
+          buf
+        })
+        .collect::<Vec<_>>();
+
+    let keystream = recover_keystream( &cipher_txt );
+    for (i, cipher) in cipher_txt.iter().enumerate() {
+      let mut plain = repeating_xor( cipher, &keystream );
+      let mut expected = from_base64( &LINES[i] );
+      plain.truncate( common_len );
+      expected.truncate( common_len );
+      assert_eq!( plain, expected );
+    }
   }
 }
